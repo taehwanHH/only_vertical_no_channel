@@ -1,17 +1,17 @@
 import torch
 import os
 import numpy as np
-from DDPG import DDPG, Actor, Critic, prepare_training_inputs
-from DDPG import OrnsteinUhlenbeckProcess as OUProcess
+from DDPG_module.DDPG import DDPG, Actor, Critic, prepare_training_inputs
+from DDPG_module.DDPG import OrnsteinUhlenbeckProcess as OUProcess
 
-from memory import ReplayMemory
-from train_utils import to_tensor
-from target_update import soft_update
-from Archery_env.Archery import ArcheryEnv
+from DDPG_module.memory import ReplayMemory
+from DDPG_module.train_utils import to_tensor
+from DDPG_module.target_update import soft_update
+
 import matplotlib.pyplot as plt
 from scipy.io import savemat
 from collections import deque
-from param import Hyper_Param
+from DDPG_module.param import Hyper_Param
 os.environ['KMP_DUPLICATE_LIB_OK'] ='True'
 
 # Hyperparameters
