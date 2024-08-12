@@ -1,9 +1,11 @@
-import numpy as np
 import torch
 import torch.nn as nn
 
-from MLP import MultiLayerPerceptron as MLP
+from DDPG_module.MLP import MultiLayerPerceptron as MLP
 from param import Hyper_Param
+from robotic_env import RoboticEnv
+
+DEVICE = Hyper_Param['DEVICE']
 
 class OrnsteinUhlenbeckProcess:
     """
@@ -14,19 +16,20 @@ class OrnsteinUhlenbeckProcess:
     def __init__(self, mu):
         self.theta, self.dt, self.sigma = Hyper_Param['theta'], Hyper_Param['dt'], Hyper_Param['sigma']
         self.mu = mu
-        self.x_prev = np.zeros_like(self.mu)
+        self.x_prev = torch.zeros_like(self.mu)
 
     def __call__(self):
         x = self.x_prev + self.theta * (self.mu - self.x_prev) * self.dt + \
-            self.sigma * np.sqrt(self.dt) * np.random.normal(size=self.mu.shape)
+            self.sigma * torch.sqrt(torch.tensor(self.dt)) * torch.randn(size=self.mu.shape)
         self.x_prev = x
         return x
 
 
-class Actor(nn.Module):
+class Actor(nn.Module,RoboticEnv):
 
     def __init__(self):
         super(Actor, self).__init__()
+        RoboticEnv.__init__(self)
         self.mlp = MLP(self.state_dim, self.action_dim,
                        num_neurons=Hyper_Param['num_neurons'],
                        hidden_act='ReLU',
@@ -38,9 +41,10 @@ class Actor(nn.Module):
         return action
 
 
-class Critic(nn.Module):
+class Critic(nn.Module,RoboticEnv):
     def __init__(self):
         super(Critic, self).__init__()
+        RoboticEnv.__init__(self)
         self.state_encoder = MLP(self.state_dim, 32,
                                  num_neurons=[64],
                                  out_act='ReLU')  # single layer model
@@ -57,7 +61,7 @@ class Critic(nn.Module):
         return self.q_estimator(emb)
 
 
-class DDPG(nn.Module):
+class DDPG(nn.Module,RoboticEnv):
 
     def __init__(self,
                  critic: nn.Module,
@@ -70,13 +74,14 @@ class DDPG(nn.Module):
                  gamma: float = 0.99):
 
         super(DDPG, self).__init__()
+
+        RoboticEnv.__init__(self)
         self.critic = critic
         self.actor = actor
         self.lr_critic = lr_critic
         self.lr_actor = lr_actor
         self.gamma = gamma
         self.epsilon = epsilon
-
 
         # setup optimizers
         self.critic_opt = torch.optim.Adam(params=self.critic.parameters(),
@@ -95,11 +100,9 @@ class DDPG(nn.Module):
 
     def get_action(self, state, noise):
         with torch.no_grad():
-            action = self.actor(state)+torch.tensor(noise)
+            action = self.actor(state)+noise.to(DEVICE)
 
-            a_r = action[:, 0].clamp(0, self.vw_max)
-            a_theta = action[:, 1].clamp(0, 2 * torch.pi)
-            clamped_action = torch.stack((a_r, a_theta), dim=1).view(size=(self.action_dim,))
+            clamped_action = torch.clamp(action, min=torch.tensor(self.action_space.low, dtype=torch.float32, device=DEVICE), max=torch.tensor(self.action_space.high, dtype=torch.float32, device=DEVICE))
         return clamped_action
 
     def update(self, state, action, reward, next_state, done):
@@ -121,7 +124,7 @@ class DDPG(nn.Module):
         self.actor_opt.step()
 
 
-def prepare_training_inputs(sampled_exps, device='cpu'):
+def prepare_training_inputs(sampled_exps, device='cuda'):
     states = []
     actions = []
     rewards = []

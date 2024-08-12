@@ -1,17 +1,19 @@
 import torch
 import os
-import numpy as np
 from DDPG_module.DDPG import DDPG, Actor, Critic, prepare_training_inputs
 from DDPG_module.DDPG import OrnsteinUhlenbeckProcess as OUProcess
 
 from DDPG_module.memory import ReplayMemory
-from DDPG_module.train_utils import to_tensor
 from DDPG_module.target_update import soft_update
 
 import matplotlib.pyplot as plt
 from scipy.io import savemat
 from collections import deque
-from DDPG_module.param import Hyper_Param
+from param import Hyper_Param
+
+import mujoco_py
+from robotic_env import RoboticEnv
+
 os.environ['KMP_DUPLICATE_LIB_OK'] ='True'
 
 # Hyperparameters
@@ -35,46 +37,50 @@ score_avg_value = []
 epi = []
 
 # Create Environment
-env = ArcheryEnv()
+xml_path = "sim_env.xml"
+model = mujoco_py.load_model_from_path(xml_path)
+env = RoboticEnv(model)
+
 s_dim = env.state_dim
 a_dim = env.action_dim
 
 # initialize target network same as the main network.
-actor, actor_target = Actor(), Actor()
-critic, critic_target = Critic(), Critic()
+actor, actor_target = Actor().to(DEVICE), Actor().to(DEVICE)
+critic, critic_target = Critic().to(DEVICE), Critic().to(DEVICE)
 
 agent = DDPG(critic=critic,
              critic_target=critic_target,
              actor=actor,
-             actor_target=actor_target,epsilon= Hyper_Param['epsilon'],
+             actor_target=actor_target,epsilon=Hyper_Param['epsilon'],
              lr_actor=lr_actor, lr_critic=lr_critic, gamma=gamma).to(DEVICE)
 
 memory = ReplayMemory(memory_size)
 
+
+
 # Episode start
 for n_epi in range(total_eps):
-    ou_noise = OUProcess(mu=np.zeros(2))
+    print(n_epi)
+    ou_noise = OUProcess(mu=torch.zeros(a_dim))
     s = env.reset()
     epi.append(n_epi)
 
     while True:
-        s = to_tensor(s, size=(-1, s_dim))
-        a = agent.get_action(s, agent.epsilon*ou_noise()[:2])
+        a = agent.get_action(s, agent.epsilon*ou_noise())
         ns, r, done, info = env.step(a)
-        experience = (s,
-                      a.view(-1,a_dim),
-                      torch.tensor(r).view(-1, 1),
-                      torch.tensor(ns).view(-1, s_dim),
-                      torch.tensor(done).view(-1, 1))
+        experience = (s.view(-1,s_dim),
+                      a.view(-1, a_dim),
+                      r.view(-1, 1),
+                      ns.view(-1, s_dim),
+                      torch.tensor(done, device=DEVICE).view(-1, 1))
         memory.push(experience)
-        env.state = ns
-        s = env.state
+        s = ns
         if done:
             break
 
-    cum_score = env.cum_score/step_max
-    score_avg.append(cum_score)
-    cum_score_list.append(cum_score)
+    # cum_score = env.cum_score/step_max
+    # score_avg.append(cum_score)
+    # cum_score_list.append(cum_score)
 
     if len(memory) >= sampling_only_until:
         # train agent
@@ -88,27 +94,27 @@ for n_epi in range(total_eps):
         soft_update(agent.critic, agent.critic_target, tau)
 
 
-    if len(score_avg) == window_size:
-        score_avg_value.append(sum(score_avg) / window_size)
-
-    else:
-        score_avg_value.append(sum(score_avg) / len(score_avg))
-
-    if n_epi % print_every == 0:
-        msg = (n_epi, cum_score, agent.epsilon)
-        print("Episode : {:4.0f} | Cumulative score : {:.2f} | epsilon : {:.3f}:".format(*msg))
-        plt.xlim(0, total_eps)
-        plt.ylim(0, 10)
-        plt.plot(epi, cum_score_list, color='black')
-        plt.plot(epi, score_avg_value, color='red')
-        # plt.plot(epi, optimal_score_avg_value, color='blue')
-        # plt.plot(epi, cum_rand_score_list, color='blue')
-        # plt.plot(epi, cum_optimal_score_list, color='green')
-        plt.xlabel('Episode', labelpad=5)
-        plt.ylabel('Average score', labelpad=5)
-        plt.grid(True)
-        plt.pause(0.0001)
-        plt.close()
+    # if len(score_avg) == window_size:
+    #     score_avg_value.append(sum(score_avg) / window_size)
+    #
+    # else:
+    #     score_avg_value.append(sum(score_avg) / len(score_avg))
+    #
+    # if n_epi % print_every == 0:
+    #     msg = (n_epi, cum_score, agent.epsilon)
+    #     print("Episode : {:4.0f} | Cumulative score : {:.2f} | epsilon : {:.3f}:".format(*msg))
+    #     plt.xlim(0, total_eps)
+    #     plt.ylim(0, 10)
+    #     plt.plot(epi, cum_score_list, color='black')
+    #     plt.plot(epi, score_avg_value, color='red')
+    #     # plt.plot(epi, optimal_score_avg_value, color='blue')
+    #     # plt.plot(epi, cum_rand_score_list, color='blue')
+    #     # plt.plot(epi, cum_optimal_score_list, color='green')
+    #     plt.xlabel('Episode', labelpad=5)
+    #     plt.ylabel('Average score', labelpad=5)
+    #     plt.grid(True)
+    #     plt.pause(0.0001)
+    #     plt.close()
 
 
 # Base directory path creation
