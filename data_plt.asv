@@ -1,0 +1,19 @@
+clear all; close all; cl
+% .mat 파일 로드
+data_path = '2024-08-30/1/data.mat';
+data = load(data_path)
+
+
+
+window_size = 50;
+lifting_time = data.stable_lifting_time;
+
+avg_lifting_time = movmean(lifting_time, window_size);
+box_pos = data.box_z_pos;
+avg_box_pos = movmean(box_pos, window_size)
+figure(1);
+plot(avg_lifting_time)
+ylim([0 501]);
+figure(2);
+plot(avg_box_pos)
+% ylim([0,3]);
